@@ -9,6 +9,7 @@ from torchquantum.plugin import (
     op_history2qiskit,
     op_history2qiskit_expand_params,
 )
+from utils import expanded_imgs_for_wires
 
 class VirtualGlobalModel(tq.QuantumModule):
     def __init__(self, qmodel_lists, n_qubits, qubits_list):
@@ -22,10 +23,13 @@ class VirtualGlobalModel(tq.QuantumModule):
         self.measure = tq.MeasureAll(tq.PauliZ)
 
     def build_global_entangle(self, qdev: tq.QuantumDevice):
-        # build global entangle layer params
+        # qdev: Quantum device with all client qubits
+        # build global entangle layer params between different clients
         wirs = 0
         count = 0
         for wir in self.qubits_list:
+            qdev.h(wires=wir)  # type: ignore
+            qdev.sx(wires=wir)
             if wirs+wir == self.n_wires:
                 self.crxs[count](qdev, wires=[0, self.n_wires - 1])
                 break
@@ -45,13 +49,13 @@ class VirtualGlobalModel(tq.QuantumModule):
         return usr_to_qubits
 
     def freeze_global_params(self):
-        # freeze global entangle params
+        # freeze global entangle params and make it not trainable
         for crx in self.crxs:
             for name,para in crx.named_parameters():
                 para.requires_grad = False
 
     def frozen_global_params(self):
-        # freeze global entangle params
+        # freeze global entangle params and make it trainable
         for crx in self.crxs:
             for name,para in crx.named_parameters():
                 para.requires_grad = True
@@ -61,38 +65,43 @@ class VirtualGlobalModel(tq.QuantumModule):
         if use_qiskit:
             pass
         else:
+            # if train virtual global model with global entangle layer
             if global_train == True:
-                bsz = x[0]["image"].shape[0]*len(x)
+                bsz = len(x[0][0])*len(x)
+                # print(bsz)
                 qdev = tq.QuantumDevice(
-                    n_wires=self.n_wires, bsz=bsz, device=x[0]["image"].device, record_op=True
+                    n_wires=self.n_wires, bsz=bsz, device=x[0][0].device, record_op=True
                 )
                 qdev = self.build_global_entangle(qdev)
                 self.usr_to_qubits = self.distribute_client_qubits()
 
                 targets = []
+
+                # TOBEFIX: 这边的逻辑能不能改进？
                 for cid in range(len(x)):
                     batch = x[cid]
                     qmodel = self.c_model_list[cid]
-                    expanded_imgs = torch.cat([batch["image"], torch.zeros_like(batch["image"]), torch.zeros_like(batch["image"])], dim=0)
+
+                    # expanded_imgs = expanded_imgs_for_wires(batch[0],len(self.usr_to_qubits))
+                    expanded_imgs = batch[0]  # cid要去掉
                     qmodel(expanded_imgs, qdev, wires=self.usr_to_qubits[cid])# wires需要指示该客户端有哪些qubits
-                    targets.append(batch["digit"])
+                    targets.append(batch[1])
                 x = self.measure(qdev)
                 x = F.log_softmax(x, dim=1)
 
-            else:# perform local training only
-                bsz = x.shape[0]*len(self.c_model_list)
+            # Perform local training on clients circuits only
+            else:
+                bsz = x.shape[0]
+                # bsz = x.shape[0]*len(self.c_model_list)
                 self.usr_to_qubits = self.distribute_client_qubits()
-                # 主要现在这边没有传输global的qdev过去
                 qdev = tq.QuantumDevice(
-                    n_wires=len(qbit_idx), bsz=32, device=x.device, record_op=True
+                    n_wires=len(qbit_idx), bsz=bsz, device=x.device, record_op=True
                 )
-
                 batch = x# cid要去掉
-                qmodel = self.c_model_list[cid]# cid 要去掉
+                model = self.c_model_list[cid]# cid 要去掉
+                # model.zero_grad()
                 expanded_imgs = batch
-
-                qmodel(expanded_imgs, qdev, local_train=True, wires=self.usr_to_qubits[cid])# wires需要指示该客户端有哪些qubits
-                # qubit数量好像不够多输出的太少了
+                model(expanded_imgs, qdev, local_train=True, wires=self.usr_to_qubits[cid])# wires需要指示该客户端有哪些qubits
                 x = self.measure(qdev)
                 x = F.log_softmax(x, dim=1)
                 return x

@@ -15,11 +15,12 @@ class QFL_Client():
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.local_epochs)
 
     def run_on_QC(self):
+        # run on real quantum computer
         pass
 
     def run(self):
+        # run on classical simulator
         self.model.train()
-        # self.model.q_layer.static_on(wires_per_block=2)
         self.model.to(self.dev)
         for batch_idx, batch_data in enumerate(self.dataloader):
             inputs = batch_data["image"].to(self.dev)

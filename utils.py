@@ -12,6 +12,8 @@ from components import Layer, Topology
 import circuit_remapper as circuit_remapper
 from typing import List
 from torch.utils.data import random_split
+import numpy as np
+from sklearn.decomposition import PCA
 
 def qiskit_compose_circs(fixed_layers: List[tq.QuantumCircuit]) -> tq.QuantumCircuit:
     """Compose subcircuits into a full circuit.
@@ -31,6 +33,13 @@ def qiskit_compose_circs(fixed_layers: List[tq.QuantumCircuit]) -> tq.QuantumCir
 def generate_client_qubits_list(num_client: int, min_qubits: int, max_qubits: int) -> List[int]:
     """
     Generate the random qubit number of clients' subcircuits.
+
+    Parameters:
+    num_client (int): Number of clients.
+    min_qubits (int): Minimum number of qubits for each client's subcircuit.
+    max_qubits (int): Maximum number of qubits for each client's subcircuit.
+    Returns:
+    List[int]: each element is qubits number of each client's subcircuit.
     """
     random_list = []
 
@@ -39,31 +48,26 @@ def generate_client_qubits_list(num_client: int, min_qubits: int, max_qubits: in
 
     for _ in range(num_client):
         random_int = random.randint(min_qubits, max_qubits)
-        random_list.append(random_int)
+        # random_list.append(random_int)
+
+        # For testing purpose, we fix the qubits number to be 2,3,4
+        # random_list.append(2)# 2的时候能到6、70
+        # 2\3 是效果最好的
+    random_list=[2,3]
 
     return random_list
 
-def split_dataset(dataset, num_client):
-    total_size = len(dataset)
-    # 整除部分，每个 client 至少分到的数量
-    split_size = total_size // num_client
-    # 余数部分，前 remainder 个 client 会多拿 1 个数据
-    remainder = total_size % num_client
+def expanded_imgs_for_wires(batch_data,num_client):
+    """expand img data to fit the qubits number of qdev dimension which is equal to all clients
 
-    # 生成一个列表，包含每个 client 应得的数据长度
-    # 例如：总量10，分3份 -> lengths=[4, 3, 3]
-    lengths = [split_size + 1 if i < remainder else split_size for i in range(num_client)]
+    Args:
+        batch_data (_type_): _input img data
+        num_client (_type_): _number of clients
 
-    # 3. 执行拆分
-    # generator参数可选，用于固定随机种子，保证每次跑分法一致
-    client_datasets = random_split(dataset, lengths, generator=torch.Generator().manual_seed(42))
-
-    # --- 验证结果 ---
-    print(f"原始数据集大小: {total_size}")
-    print(f"客户端数量: {num_client}")
-    print(f"拆分方案 (lengths): {lengths}")
-
-    # 打印前几个 client 的数据集大小
-    for i, client_ds in enumerate(client_datasets):
-        print(f"Client {i} 数据量: {len(client_ds)}")
-    return client_datasets
+    Returns:
+        _type_: _expanded img data
+    """
+    to_build = [batch_data]
+    for _ in range(num_client - 1):
+        to_build.append(torch.zeros_like(batch_data))
+    return torch.cat(to_build, dim=0)

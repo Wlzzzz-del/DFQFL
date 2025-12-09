@@ -23,14 +23,19 @@ from sub_qfl_server import SUB_QFL_Server
 
 def main():
     # Hyperparameters
-    lr = 0.0001
-    epochs = 1000
+    lr = 0.01
+    epochs = 500
     dataset = "mnist"
-    classes = [0,1]
-    num_client = 3
+    classes = [0,3]
+    num_client = 2# try only one
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    local_epochs = 1
+    local_epochs = 3
     server = "SUB_QFL" # QFL// SUB_QFL
+    weight_decay = 1e-4
+    batch_size=256
+    min_qubits=2
+    max_qubits=4
+    # 固定random seed
 
     print("Starting DFQFL Server...")
     # Define and run DFQFL server
@@ -39,7 +44,7 @@ def main():
         QFL.run()
 
     elif server == "SUB_QFL":
-        SUB_QFL = SUB_QFL_Server(num_client,classes, lr, epochs, dataset,dev, local_epochs)
+        SUB_QFL = SUB_QFL_Server(num_client,classes, lr, epochs, dataset,dev, local_epochs,weight_decay,batch_size,min_qubits=min_qubits, max_qubits=max_qubits)
         SUB_QFL.run()
         # SUB_QFL.test()
 
